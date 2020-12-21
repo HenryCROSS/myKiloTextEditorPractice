@@ -110,10 +110,13 @@ int getCursorPosition(int *rows, int *cols)
     unsigned int i = 0;
 
     // get the position of cursor
-    // the actual response: 24;80R, or similar
+    // the actual response: <esc>[24;80R, or similar
     if(write(STDOUT_FILENO, "\x1b[6n", 4) != 4)
         return -1;
 
+    // parse the response from the standard input
+    // think about echo -e hello > file
+    // 0 -> output, 1-> standard input 2->error message
     while (i < sizeof(buf) - 1)
     {
         if (read(STDIN_FILENO, &buf[i], 1) != 1)
