@@ -428,7 +428,7 @@ void editorRefreshScreen()
     char buf[32];
 
     // the first calculation gets screenrows or a number lower than screenrows
-    // which it is still in the screen
+    // which it is still in the screen. Note: cy could be changed.
     // E.cy - E.rowoff <= screenrows
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
     abAppend(&ab, buf, strlen(buf));
