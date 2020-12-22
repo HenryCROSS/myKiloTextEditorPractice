@@ -1,6 +1,5 @@
 /* includes */
 
-#include <cstddef>
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #define _GNU_SOURCE
@@ -47,6 +46,8 @@ typedef struct erow
 struct editorConfig
 {
     int cx, cy;
+    // row offset, keep track of what row of the file the user is currently scrolled to
+    int rowoff;
     int screenrows;
     int screencols;
     int numrows;
@@ -264,7 +265,7 @@ int getWindowSize(int *rows, int *cols)
 
 /* row operations */
 
-void editorAppend(char *s, size_t len)
+void editorAppendRow(char *s, size_t len)
 {
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
@@ -285,20 +286,19 @@ void editorOpen(char *filename)
         die("fopen");
 
     char *line = NULL;
-    size_t linecap = 0;
+    size_t linecap = 0; // line capacity
     ssize_t linelen;
 
     // get a line of text from the file and get the length of line it read
-    linelen = getline(&line, &linecap, fp);
-
     // whether is the EOF
-    if(linelen != -1)
+    while((linelen = getline(&line, &linecap, fp)) != -1)
     {
+        // truncate the \r\n
         while(linelen > 0 && (line[linelen - 1] == '\n' ||
                               line[linelen - 1] == '\r'))
             linelen--;
 
-        editorAppend(line, linelen);
+        editorAppendRow(line, linelen);
     }
 
     free(line);
@@ -337,14 +337,33 @@ void abFree(struct abuf *ab)
 
 /* output */
 
+void editorScroll()
+{
+    // if the cursor is above the visible window, then scrolls up
+    if(E.cy < E.rowoff)
+    {
+        E.rowoff = E.cy;
+    }
+
+    // if the cursor is past the bottom of the visible window
+    if(E.cy >= E.rowoff + E.screenrows)
+    {
+        E.rowoff = E.cy - E.screenrows + 1;
+    }
+}
+
 void editorDrawRows(struct abuf *ab)
 {
     int y;
     for(y = 0; y < E.screenrows; y++)
     {
+        int filerow = y + E.rowoff;
+
         // whether is drawing a row that is part of the text buffer, or a row that comes after the end of the text buffer
-        if(y >= E.numrows)
+        if(filerow >= E.numrows)
         {
+            // if the app is not opening a file
+            // then print welcome in pos (E.screenrows / 3)
             if(E.numrows == 0 && y == E.screenrows / 3)
             {
                 char welcome[80];
@@ -374,12 +393,12 @@ void editorDrawRows(struct abuf *ab)
         }
         else
         {
-            int len = E.row.size;
+            int len = E.row[filerow].size;
 
             if (len > E.screencols)
                 len = E.screencols;
 
-            abAppend(ab, E.row.chars, len);
+            abAppend(ab, E.row[filerow].chars, len);
         }
 
         abAppend(ab, "\x1b[K", 3);
@@ -392,6 +411,8 @@ void editorDrawRows(struct abuf *ab)
 
 void editorRefreshScreen()
 {
+    editorScroll();
+
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab, "\x1b[?25l", 6);
@@ -400,7 +421,7 @@ void editorRefreshScreen()
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
@@ -437,7 +458,7 @@ void editorMoveCursor(int key)
         break;
 
     case ARROW_DOWN:
-        if (E.cy != E.screenrows - 1)
+        if (E.cy != E.numrows)
         {
             E.cy++;
         }
@@ -493,6 +514,7 @@ void initEditor()
 {
     E.cx = 0;
     E.cy = 0;
+    E.rowoff = 0;
     E.numrows = 0;
     E.row = NULL;
 
