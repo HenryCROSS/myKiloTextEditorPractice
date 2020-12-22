@@ -47,6 +47,10 @@ struct editorConfig
 {
     int cx, cy;
     // row offset, keep track of what row of the file the user is currently scrolled to
+    // it decides the edge of the screen, cy would go over the screen,
+    // the idea of this variable is to do the calculation with cy to calculate the
+    // pos of the cursor within the screen after the cursor go through the
+    // screen
     int rowoff;
     int screenrows;
     int screencols;
@@ -393,6 +397,7 @@ void editorDrawRows(struct abuf *ab)
         }
         else
         {
+            // display a line of text
             int len = E.row[filerow].size;
 
             if (len > E.screencols)
@@ -421,6 +426,10 @@ void editorRefreshScreen()
     editorDrawRows(&ab);
 
     char buf[32];
+
+    // the first calculation gets screenrows or a number lower than screenrows
+    // which it is still in the screen
+    // E.cy - E.rowoff <= screenrows
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
     abAppend(&ab, buf, strlen(buf));
 
