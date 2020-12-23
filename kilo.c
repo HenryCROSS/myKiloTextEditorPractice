@@ -17,6 +17,7 @@
 /* defines */
 
 #define KILO_VERSION "0.0.1"
+#define KILO_TAB_STOP 8
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -39,7 +40,9 @@ enum editorKey
 typedef struct erow
 {
     int size;
+    int rsize;
     char *chars;
+    char *render;
 } erow;
 
 // controlling the cursor, the text, all the property of the application
@@ -270,6 +273,38 @@ int getWindowSize(int *rows, int *cols)
 
 /* row operations */
 
+void editorUpdateRow(erow *row)
+{
+    int tabs = 0;
+    int j;
+
+    for(j = 0; j < row->size ; j++)
+        if(row->chars[j] == '\t')
+            tabs++;
+
+    free(row->render);
+    row->render = malloc(row->size + tabs * (KILO_TAB_STOP - 1) + 1);
+
+    int idx = 0;
+    for(j = 0; j < row->size; j++)
+    {
+        if(row->chars[j] == '\t')
+        {
+            row->render[idx++] = ' ';
+
+            while(idx % KILO_TAB_STOP != 0)
+                row->render[idx++] = ' ';
+        }
+        else
+        {
+            row->render[idx++] = row->chars[j];
+        }
+    }
+
+    row->render[idx] = '\0';
+    row->rsize = idx;
+}
+
 void editorAppendRow(char *s, size_t len)
 {
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
@@ -279,6 +314,11 @@ void editorAppendRow(char *s, size_t len)
     E.row[at].chars = malloc(len + 1);
     memcpy(E.row[at].chars, s, len);
     E.row[at].chars[len] = '\0';
+
+    E.row[at].rsize = 0;
+    E.row[at].render = NULL;
+    editorUpdateRow(&E.row[at]);
+
     E.numrows++;
 }
 
@@ -355,6 +395,17 @@ void editorScroll()
     {
         E.rowoff = E.cy - E.screenrows + 1;
     }
+
+    // the same as parallel to the vertical scrolling code
+    if(E.cx < E.coloff)
+    {
+        E.coloff = E.cx;
+    }
+
+    if(E.cx >= E.coloff + E.screencols)
+    {
+        E.coloff = E.cx - E.screencols + 1;
+    }
 }
 
 void editorDrawRows(struct abuf *ab)
@@ -398,16 +449,16 @@ void editorDrawRows(struct abuf *ab)
         }
         else
         {
-            // display a line of text
-            int len = E.row[filerow].size - E.coloff;
+            // display a line of text in the screen
+            int len = E.row[filerow].rsize - E.coloff;
 
             if(len < 0)
-                len = E.screencols;
+                len = 0;
 
             if (len > E.screencols)
                 len = E.screencols;
 
-            abAppend(ab, &E.row[filerow].chars[E.coloff], len);
+            abAppend(ab, &E.row[filerow].render[E.coloff], len);
         }
 
         abAppend(ab, "\x1b[K", 3);
@@ -434,7 +485,7 @@ void editorRefreshScreen()
     // the first calculation gets screenrows or a number lower than screenrows
     // which it is still in the screen. Note: cy could be changed.
     // E.cy - E.rowoff <= screenrows
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
@@ -447,6 +498,9 @@ void editorRefreshScreen()
 
 void editorMoveCursor(int key)
 {
+    // if there is a row from the file, the row would be defined
+    erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
     switch(key)
     {
     case ARROW_LEFT:
@@ -454,12 +508,23 @@ void editorMoveCursor(int key)
         {
             E.cx--;
         }
+        else if(E.cy > 0) //move the cursor to the end of previous line if the cursor in the beginning of the line
+        {
+            E.cy--;
+            E.cx = E.row[E.cy].size;
+        }
         break;
 
     case ARROW_RIGHT:
-        if(E.cx != E.screencols - 1)
+        // is the row has something out of the screen
+        if(row && E.cx < row->size)
         {
             E.cx++;
+        }
+        else if(row && E.cx == row->size) //move the cursor to the beginning of next line if the cursor in the end of the line
+        {
+            E.cy++;
+            E.cx = 0;
         }
         break;
 
@@ -476,6 +541,16 @@ void editorMoveCursor(int key)
             E.cy++;
         }
         break;
+    }
+
+    // check whether the line is shorter or longer than the previous line
+    // if so, change the position of the cursor
+    row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+    int rowlen = row ? row->size : 0;
+
+    if(E.cx > rowlen)
+    {
+        E.cx = rowlen;
     }
 }
 
