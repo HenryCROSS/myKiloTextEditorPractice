@@ -79,7 +79,7 @@ struct editorConfig E;
 
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
-char *editorPrompt(char *prompt);
+char *editorPrompt(char *prompt, void (*callback)(char *, int));
 
 /* terminal */
 
@@ -586,7 +586,7 @@ void editorSave()
 
     if (E.filename == NULL)
     {
-        E.filename = editorPrompt("Save as: %s (ESC to cancel)");
+        E.filename = editorPrompt("Save as: %s (ESC to cancel)", NULL);
 
         if (E.filename == NULL)
         {
@@ -642,7 +642,7 @@ void editorSave()
 void editorFind()
 {
     // return NULL when enter Escape Key
-    char *query = editorPrompt("Search: %s (ESC to cancel)");
+    char *query = editorPrompt("Search: %s (ESC to cancel)", NULL);
 
     if (query == NULL)
         return;
@@ -661,6 +661,7 @@ void editorFind()
             E.cy = i;
             // subtract the row->render pointer from the mathch pointer
             // since match is a pointer into the row->render string
+            // it will get the position of the word
             E.cx = editorRowRxToCx(row, match - row->render);
             E.rowoff = E.numrows;
             break;
@@ -894,7 +895,7 @@ void editorSetStatusMessage(const char *fmt, ...)
 
 /* input */
 
-char *editorPrompt(char *prompt)
+char *editorPrompt(char *prompt, void (*callback)(char *, int))
 {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
@@ -919,6 +920,10 @@ char *editorPrompt(char *prompt)
         else if (c == '\x1b')
         {
             editorSetStatusMessage("");
+
+            if(callback)
+                callback(buf, c);
+
             free(buf);
             return NULL;
         }
@@ -928,6 +933,10 @@ char *editorPrompt(char *prompt)
             if (buflen != 0)
             {
                 editorSetStatusMessage("");
+
+                if(callback)
+                    callback(buf, c);
+
                 return buf;
             }
         }
