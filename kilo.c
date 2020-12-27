@@ -639,18 +639,50 @@ void editorSave()
 
 /* find */
 
-void editorFind()
+void editorFindCallback(char * query, int key)
 {
-    // return NULL when enter Escape Key
-    char *query = editorPrompt("Search: %s (ESC to cancel)", NULL);
+    // always search forward
+    static int last_match = -1;
+    static int direction = 1;
 
-    if (query == NULL)
+    if(key == '\r' || key == '\x1b')
+    {
+        last_match = -1;
+        direction = 1;
+
         return;
+    }
+    else if(key == ARROW_RIGHT || key == ARROW_DOWN)
+    {
+        direction = 1;
+    }
+    else if(key == ARROW_LEFT || key == ARROW_UP)
+    {
+        direction = -1;
+    }
+    else
+    {
+        last_match = -1;
+        direction = 1;
+    }
 
+    if(last_match == -1)
+        direction = 1;
+
+    // the index of the current row we are searching
+    int current = last_match;
     int i;
     for (i = 0; i < E.numrows; i++) // loop through all rows
     {
-        erow *row = &E.row[i];
+        // go to the next line(+1/-1)
+        current += direction;
+
+        if(current == -1)// cause the cursor go to the end of the file
+            current = E.numrows -1;
+        else if(current == E.numrows) // cause the cursor go back to the start of the file
+            current = 0;
+
+        erow *row = &E.row[current];
         // returns NULL if there is no mathch, otherwise
         // it returns a pointer to the matching substring.
         char *match = strstr(row->render, query);
@@ -658,7 +690,8 @@ void editorFind()
         // move the cursor to the target
         if (match)
         {
-            E.cy = i;
+            last_match = current;
+            E.cy = current;
             // subtract the row->render pointer from the mathch pointer
             // since match is a pointer into the row->render string
             // it will get the position of the word
@@ -667,8 +700,30 @@ void editorFind()
             break;
         }
     }
+}
 
-    free(query);
+void editorFind()
+{
+    int saved_cx = E.cx;
+    int saved_cy = E.cy;
+    int saved_coloff = E.coloff;
+    int saved_rowoff = E.rowoff;
+
+    // return NULL when enter Escape Key
+    char *query = editorPrompt("Search: %s (Use ESC/Arrows/Enter)", editorFindCallback);
+
+    if (query)
+    {
+        free(query);
+    }
+    else
+    {
+        // if the search mod is cancelled
+        E.cx = saved_cx;
+        E.cy = saved_cy;
+        E.coloff = saved_coloff;
+        E.rowoff = saved_rowoff;
+    }
 }
 
 // it would be a good idea to do one big write other than a bunch of small
@@ -916,7 +971,7 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int))
             if (buflen != 0)
                 buf[--buflen] = '\0';
         }
-        // press ESC to cancel SAVE AS
+        // press ESC to cancel
         else if (c == '\x1b')
         {
             editorSetStatusMessage("");
@@ -952,6 +1007,9 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int))
             buf[buflen++] = c;
             buf[buflen] = '\0';
         }
+
+        if(callback)
+            callback(buf, c);
     }
 }
 
