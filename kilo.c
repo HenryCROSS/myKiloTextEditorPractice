@@ -1,6 +1,5 @@
 /* includes */
 
-#include <cstddef>
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #define _GNU_SOURCE
@@ -417,6 +416,13 @@ void editorSelectSyntaxHighlight()
                (!is_ext && strstr(E.filename, s->filematch[i])))
             {
                 E.syntax = s;
+
+                int filerow;
+                for(filerow = 0; filerow < E.numrows; filerow++)
+                {
+                    editorUpdateSyntax(&E.row[filerow]);
+                }
+
                 return;
             }
 
